@@ -15,12 +15,31 @@ func GetNewWallet() (*ecdsa.PrivateKey, *ecdsa.PublicKey, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	publicKey, err := GetPublickKeyFromPrivateKey(privateKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	return privateKey, publicKey, nil
+}
+
+func GetPublickKeyFromPrivateKey(privateKey *ecdsa.PrivateKey) (*ecdsa.PublicKey, error) {
+	if privateKey == nil {
+		return nil, nil
+	}
 	publicKey := privateKey.Public()
 	pk, ok := publicKey.(*ecdsa.PublicKey)
 	if !ok {
-		return nil, nil, errors.New("invalid public key")
+		return nil, errors.New("invalid public key")
 	}
-	return privateKey, pk, nil
+	return pk, nil
+}
+
+func HexToPrivateKey(privateKeyHex string) (*ecdsa.PrivateKey, error) {
+	privateKeyBytes, err := hexutil.Decode(privateKeyHex)
+	if err != nil {
+		return nil, err
+	}
+	return crypto.ToECDSA(privateKeyBytes)
 }
 
 func PrivateKeyToHex(privateKey *ecdsa.PrivateKey) string {

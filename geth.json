@@ -1,6 +1,6 @@
 {
     "ethereum": {
-        "addr":"http://0.0.0.0:8545",
+        "addr":"ws://0.0.0.0:8545/ws",
         "accounts": [
             {
                 "addr": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", 

@@ -11,13 +11,23 @@ import (
 
 var client *ethclient.Client
 
-func InitClient(ethAddr string) error {
+func Init(ethAddr string) error {
+	if err := initClient(ethAddr); err != nil {
+		return err
+	}
+	if err := initChaiID(); err != nil {
+		return err
+	}
+	slog.Info("geth resource init success")
+	return nil
+}
+
+func initClient(ethAddr string) error {
 	eClient, err := ethclient.Dial(ethAddr)
 	if err != nil {
 		return err
 	}
 	client = eClient
-	slog.Info("geth client init success")
 	return nil
 }
 
