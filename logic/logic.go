@@ -47,15 +47,7 @@ func TransToken(ctx context.Context, privateKey *ecdsa.PrivateKey, toAddr, token
 	if err != nil {
 		return err
 	}
-	hash := sha3.NewLegacyKeccak256()
-	hash.Write([]byte("transfer(address,uint256)"))
-	methodID := hash.Sum(nil)[:4]
-	paddedAddress := common.LeftPadBytes(tokenAddr.Bytes(), 32)
-	paddedAmount := common.LeftPadBytes(amount.Bytes(), 32)
-	data := make([]byte, 68)
-	copy(data[:4], methodID)
-	copy(data[4:36], paddedAddress)
-	copy(data[36:68], paddedAmount)
+	data := getTransactionData(tokenAddr, amount)
 	gasLimit, err := client.EstimateGas(ctx, ethereum.CallMsg{
 		To:   &tokenAddr,
 		Data: data,
@@ -70,4 +62,17 @@ func TransToken(ctx context.Context, privateKey *ecdsa.PrivateKey, toAddr, token
 		return err
 	}
 	return client.SendTransaction(ctx, signedTx)
+}
+
+func getTransactionData(tokenAddr common.Address, amount *big.Int) []byte {
+	hash := sha3.NewLegacyKeccak256()
+	hash.Write([]byte("transfer(address,uint256)"))
+	methodID := hash.Sum(nil)[:4]
+	paddedAddress := common.LeftPadBytes(tokenAddr.Bytes(), 32)
+	paddedAmount := common.LeftPadBytes(amount.Bytes(), 32)
+	data := make([]byte, 68)
+	copy(data[:4], methodID)
+	copy(data[4:36], paddedAddress)
+	copy(data[36:68], paddedAmount)
+	return data
 }
