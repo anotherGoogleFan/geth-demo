@@ -4,9 +4,11 @@ import (
 	"context"
 	"log/slog"
 	"math/big"
+	"strconv"
 	"strings"
 	"sync"
 
+	"geth-demo/contract/exchange"
 	"geth-demo/contract/store"
 	"geth-demo/gethResorce"
 	"geth-demo/token"
@@ -35,6 +37,7 @@ func Contract() {
 	wg.Add(1)
 	go subscribeContractLog(wg, contractAddr)
 	readErc20LogEvent()
+	read0xProtocolLogEvent()
 	wg.Wait()
 }
 
@@ -219,33 +222,25 @@ func readErc20LogEvent() {
 	logTransferSigHash := crypto.Keccak256Hash([]byte("Transfer(address,address,uint256)"))
 	logApprovalSigHash := crypto.Keccak256Hash([]byte("Approval(address,address,uint256)"))
 	for _, vLog := range logs {
-		slog.Info("vlog info", slog.Any("block number", vLog.BlockNumber), slog.Any("log index", vLog.Index))
+		slog.Info("erc20 vlog info", slog.Any("block number", vLog.BlockNumber), slog.Any("log index", vLog.Index))
 		if len(vLog.Topics[0]) == 0 {
-			slog.Info("empty topic")
+			slog.Info("erc20 empty topic")
 			continue
 		}
 		switch vLog.Topics[0] {
 		case logTransferSigHash:
-			var transferEvent struct {
-				From   common.Address
-				To     common.Address
-				Tokens *big.Int
-			}
+			var transferEvent token.TokenTransfer
 			if err = contractAbi.UnpackIntoInterface(&transferEvent, "Transfer", vLog.Data); err != nil {
-				slog.Error("unpack transfer log", slog.Any("err", err))
+				slog.Error("erc20 unpack transfer log", slog.Any("err", err))
 				continue
 			}
 			transferEvent.From = common.HexToAddress(vLog.Topics[1].Hex())
 			transferEvent.To = common.HexToAddress(vLog.Topics[2].Hex())
 			slog.Info("erc20 log: transfer", slog.Any("from", transferEvent.From.Hex()), slog.Any("to", transferEvent.To.Hex()), slog.Any("Tokens", transferEvent.Tokens.String()))
 		case logApprovalSigHash:
-			var approvalEvent struct {
-				TokenOwner common.Address
-				Spender    common.Address
-				Tokens     *big.Int
-			}
+			var approvalEvent token.TokenApproval
 			if err = contractAbi.UnpackIntoInterface(&approvalEvent, "Approval", vLog.Data); err != nil {
-				slog.Error("unpack approval log", slog.Any("err", err))
+				slog.Error("erc20 unpack approval log", slog.Any("err", err))
 				continue
 			}
 			approvalEvent.TokenOwner = common.HexToAddress(vLog.Topics[1].Hex())
@@ -254,4 +249,82 @@ func readErc20LogEvent() {
 		}
 	}
 	slog.Info("erc20 log success")
+}
+
+// 26.读取0x protocol事件日志
+func read0xProtocolLogEvent() {
+	contractAddress := common.HexToAddress("0x12459C951127e0c374FF9105DdA097662A027093")
+	query := ethereum.FilterQuery{
+		FromBlock: big.NewInt(6383482),
+		ToBlock:   big.NewInt(6383488),
+		Addresses: []common.Address{
+			contractAddress,
+		},
+	}
+	client := gethResorce.GetClient()
+	logs, err := client.FilterLogs(context.Background(), query)
+	if err != nil {
+		slog.Error("read 0x protocal log event fail: filter logs", slog.Any("err", err))
+		return
+	}
+	contractAbi, err := abi.JSON(strings.NewReader(exchange.ExchangeABI))
+	if err != nil {
+		slog.Error("read 0x protocal log event fail: contract abi", slog.Any("err", err))
+		return
+	}
+	logFillHash := crypto.Keccak256Hash([]byte("LogFill(address,address,address,address,address,uint256,uint256,uint256,uint256,bytes32,bytes32)"))
+	logCancelHash := crypto.Keccak256Hash([]byte("LogCancel(address,address,address,address,uint256,uint256,bytes32,bytes32)"))
+	logErrorHash := crypto.Keccak256Hash([]byte("LogError(uint8,bytes32)"))
+	for _, vLog := range logs {
+		slog.Info("0x protocal vlog info", slog.Any("block number", vLog.BlockNumber), slog.Any("log index", vLog.Index))
+		if len(vLog.Topics[0]) == 0 {
+			slog.Info("0x protocal empty topic")
+			continue
+		}
+		switch vLog.Topics[0] {
+		case logFillHash:
+			var fillEvent exchange.ExchangeLogFill
+			if err = contractAbi.UnpackIntoInterface(&fillEvent, "LogFill", vLog.Data); err != nil {
+				slog.Error("0x protocal unpack LogFill log", slog.Any("err", err))
+				continue
+			}
+			if len(vLog.Topics) != 4 {
+				slog.Error("0x protocal LogFill log topics", slog.Any("fillEvent", fillEvent), slog.Any("length", len(vLog.Topics)))
+				continue
+			}
+			fillEvent.Maker = common.HexToAddress(vLog.Topics[1].Hex())
+			fillEvent.FeeRecipient = common.HexToAddress(vLog.Topics[2].Hex())
+			fillEvent.Tokens = vLog.Topics[3]
+		case logCancelHash:
+			var cancelEvent exchange.ExchangeLogCancel
+			if err = contractAbi.UnpackIntoInterface(&cancelEvent, "LogCancel", vLog.Data); err != nil {
+				slog.Error("0x protocal unpack LogCancel log", slog.Any("err", err))
+				continue
+			}
+			if len(vLog.Topics) != 4 {
+				slog.Error("0x protocal LogCancel log topics", slog.Any("cancelEvent", cancelEvent), slog.Any("length", len(vLog.Topics)))
+				continue
+			}
+			cancelEvent.Maker = common.HexToAddress(vLog.Topics[1].Hex())
+			cancelEvent.FeeRecipient = common.HexToAddress(vLog.Topics[2].Hex())
+			cancelEvent.Tokens = vLog.Topics[3]
+		case logErrorHash:
+			var errEvent exchange.ExchangeLogError
+			if err = contractAbi.UnpackIntoInterface(&errEvent, "LogError", vLog.Data); err != nil {
+				slog.Error("0x protocal unpack LogError log", slog.Any("err", err))
+				continue
+			}
+			if len(vLog.Topics) != 3 {
+				slog.Error("0x protocal LogError log topics", slog.Any("errEvent", errEvent), slog.Any("length", len(vLog.Topics)))
+				continue
+			}
+			id, err := strconv.ParseInt(vLog.Topics[1].Hex(), 16, 64)
+			if err != nil {
+				slog.Error("0x protocal LogError log id fail", slog.Any("errEvent", errEvent), slog.Any("hex", vLog.Topics[1].Hex()))
+				continue
+			}
+			errEvent.ErrorId = uint8(id)
+			errEvent.OrderHash = vLog.Topics[2]
+		}
+	}
 }
