@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"log/slog"
 	"math/big"
@@ -38,6 +39,10 @@ func Contract() {
 	go subscribeContractLog(wg, contractAddr)
 	readErc20LogEvent()
 	read0xProtocolLogEvent()
+	signature := getSignature()
+	if signature != nil {
+		checkSignature(signature)
+	}
 	wg.Wait()
 }
 
@@ -327,4 +332,55 @@ func read0xProtocolLogEvent() {
 			errEvent.OrderHash = vLog.Topics[2]
 		}
 	}
+}
+
+// 27.生成签名
+func getSignature() []byte {
+	data := []byte("hello")
+	dataHash := crypto.Keccak256Hash(data)
+	signature, err := crypto.Sign(dataHash.Bytes(), myAccounts[0].privateKey)
+	if err != nil {
+		slog.Error("get sig fail", slog.Any("err", err))
+		return nil
+	}
+	return signature
+}
+
+// 28.验证签名
+func checkSignature(sig []byte) {
+	publicKeyBytes := crypto.FromECDSAPub(myAccounts[0].publicKey)
+	data := []byte("hello")
+	dataHash := crypto.Keccak256Hash(data)
+	checkMethod1(dataHash, sig, publicKeyBytes)
+	checkMethod2(dataHash, sig, publicKeyBytes)
+	checkMethod3(dataHash, sig, publicKeyBytes)
+}
+
+// 验证签名. 方法1.
+func checkMethod1(dataHash common.Hash, sig, publicKeyBytes []byte) {
+	sigPublicKey, err := crypto.Ecrecover(dataHash.Bytes(), sig)
+	if err != nil {
+		slog.Error("check sign fail: checkMethod1", slog.Any("err", err))
+		return
+	}
+	matche := bytes.Equal(sigPublicKey, publicKeyBytes)
+	slog.Error("check sign success: checkMethod1", slog.Any("res", matche))
+}
+
+// 验证签名. 方法2.
+func checkMethod2(dataHash common.Hash, sig, publicKeyBytes []byte) {
+	sigPublicKey, err := crypto.Ecrecover(dataHash.Bytes(), sig)
+	if err != nil {
+		slog.Error("check sign fail: checkMethod2", slog.Any("err", err))
+		return
+	}
+	matche := bytes.Equal(sigPublicKey, publicKeyBytes)
+	slog.Error("check sign success: checkMethod2", slog.Any("res", matche))
+}
+
+// 验证签名. 方法3.
+func checkMethod3(dataHash common.Hash, sig, publicKeyBytes []byte) {
+	signatureNoRecoverID := sig[:len(sig)-1] // remove recovery id
+	matche := crypto.VerifySignature(publicKeyBytes, dataHash.Bytes(), signatureNoRecoverID)
+	slog.Error("check sign success: checkMethod3", slog.Any("res", matche))
 }
